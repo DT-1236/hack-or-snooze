@@ -8,41 +8,40 @@ class StoryList {
     this.addStory = this.addStory.bind(this);
   }
 
-  static getStories(probablyDOMStuff) {
+  static getStories(success_callback) {
     // fetch stories from API
     $.getJSON(`${BASE_URL}/stories`, function(response) {
       const stories = response.stories.map(function(story) {
         return new Story(story);
       });
       storyList = new StoryList(stories);
-      return probablyDOMStuff(storyList);
+      return success_callback(storyList);
     });
   }
 
-  getMoreStories(skip, limit, probablyDOMStuff) {
+  getMoreStories(skip, limit, success_callback) {
     $.getJSON(`${BASE_URL}/stories`, { skip, limit }, response => {
       const newStories = response.stories.map(function(story) {
         return new Story(story);
       });
       this.stories = this.stories.concat(newStories);
-      return probablyDOMStuff(this);
+      return success_callback(this);
     });
   }
 
-  addStory(user, protoStoryObj, probablyDOMStuff) {
+  addStory(user, protoStoryObj, success_callback) {
     $.post(
       `${BASE_URL}/stories`,
       { token: user.loginToken, story: protoStoryObj },
       response => {
         let newStory = new Story(response.story);
         this.stories.unshift(newStory);
-        // callback for retrieveDetails is unclear
-        user.retrieveDetails(() => probablyDOMStuff(newStory));
+        user.retrieveDetails(() => success_callback(newStory));
       }
     );
   }
 
-  removeStory(user, storyId, probablyDOMStuff) {
+  removeStory(user, storyId, success_callback) {
     $.ajax({
       url: `${BASE_URL}/stories/${storyId}`,
       type: 'DELETE',
@@ -58,27 +57,24 @@ class StoryList {
           story => story.storyId === storyId
         );
         user.ownStories.splice(storyListIndex, 1);
-        // prompt indicates that response will be an updated list of stories.
-        // May need to call other methods on it
-        probablyDOMStuff(this);
+        success_callback(this);
       }
     });
   }
 }
 
 class User {
-  constructor(username, name, token) {
-    (this.username = username),
-      (this.name = name),
-      (this.loginToken = token),
-      (this.favorites = []),
-      (this.ownStories = []),
-      (this.createdAt = ''); //assigned when creating or retrieveDetails
-    this.updatedAt = ''; //assigned when creating or retrieveDetails
+  constructor(username, name, token, createdAt = '', updatedAt = '') {
+    this.username = username;
+    this.name = name;
+    this.loginToken = token;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.favorites = [];
+    this.ownStories = [];
   }
 
-  //probablyDOMStuff should update global user
-  static create(username, password, name, probablyDOMStuff) {
+  static create(username, password, name, success_callback) {
     $.post(
       `${BASE_URL}/signup`,
       { user: { username, password, name } },
@@ -86,46 +82,43 @@ class User {
         user = new User(
           response.user.username,
           response.user.name,
-          response.token
+          response.token,
+          response.user.createdAt,
+          response.user.updatedAt
         );
         localStorage.setItem('username', response.user.username);
         localStorage.setItem('token', response.token);
-        user.createdAt = response.user.createdAt;
-        user.updatedAt = response.user.updatedAt;
-        // solution and prompt differ. Solution returns the new user object
-        probablyDOMStuff(response);
+        success_callback(response);
       }
     );
   }
 
-  // probablyDOMStuff function should update user's login token and global user variable
-  static login(username, password, probablyDOMStuff) {
+  static login(username, password, success_callback) {
     $.post(`${BASE_URL}/login`, { user: { username, password } }, response => {
       user = new User(
         response.user.username,
         response.user.name,
-        response.token
+        response.token,
+        response.user.createdAt,
+        response.user.updatedAt
       );
       localStorage.setItem('username', response.user.username);
       localStorage.setItem('token', response.token);
-      user.createdAt = response.user.createdAt;
-      user.updatedAt = response.user.updatedAt;
-      // solution and prompt differ. Solution returns the user object
-      probablyDOMStuff(response);
+      success_callback(response);
     });
   }
 
-  static stayLoggedIn(probablyDOMStuff) {
+  static stayLoggedIn(success_callback) {
     // if (localStorage.getItem("token")) {
     user = new User(
       localStorage.getItem('username'),
       '', // Will get filled when retrieveDetails is called
       localStorage.getItem('token')
     );
-    user.retrieveDetails(probablyDOMStuff);
+    user.retrieveDetails(success_callback);
   }
 
-  retrieveDetails(probablyDOMStuff) {
+  retrieveDetails(success_callback) {
     $.get(
       `${BASE_URL}/users/${this.username}`,
       { token: this.loginToken },
@@ -138,22 +131,22 @@ class User {
         this.createdAt = response.user.createdAt;
         this.updatedAt = response.user.updatedAt;
 
-        probablyDOMStuff(this);
+        success_callback(this);
       }
     );
   }
 
-  addFavorite(storyId, probablyDOMStuff) {
+  addFavorite(storyId, success_callback) {
     $.post(
       `${BASE_URL}/users/${user.username}/favorites/${storyId}`,
       { token: this.loginToken },
       () => {
-        this.retrieveDetails(() => probablyDOMStuff(this));
+        this.retrieveDetails(() => success_callback(this));
       }
     );
   }
 
-  removeFavorite(storyId, probablyDOMStuff) {
+  removeFavorite(storyId, success_callback) {
     $.ajax({
       url: `${BASE_URL}/users/${user.username}/favorites/${storyId}`,
       type: 'DELETE',
@@ -161,12 +154,12 @@ class User {
         token: this.loginToken
       },
       success: () => {
-        this.retrieveDetails(() => probablyDOMStuff(this));
+        this.retrieveDetails(() => success_callback(this));
       }
     });
   }
 
-  update(userData, probablyDOMStuff) {
+  update(userData, success_callback) {
     const { username, favorites, ...userDetails } = userData;
     $.ajax({
       url: `${BASE_URL}/users/${this.username}`,
@@ -177,32 +170,31 @@ class User {
       },
       success: response => {
         this.name = response.user.name;
-        // this.password = userDetails.password || this.password;
-        probablyDOMStuff(this);
+        success_callback(this);
       }
     });
   }
 
-  remove(probablyDOMStuff) {
+  remove(success_callback) {
     $.ajax({
       url: `${BASE_URL}/users/${this.username}`,
       type: 'DELETE',
       data: { token: this.loginToken },
-      success: probablyDOMStuff
+      success: success_callback
     });
   }
 }
 
 class Story {
   constructor(storyDetails) {
-    (this.author = storyDetails.author),
-      (this.title = storyDetails.title),
-      (this.url = storyDetails.url),
-      (this.username = storyDetails.username),
-      (this.storyId = storyDetails.storyId);
+    this.author = storyDetails.author;
+    this.title = storyDetails.title;
+    this.url = storyDetails.url;
+    this.username = storyDetails.username;
+    this.storyId = storyDetails.storyId;
   }
 
-  update(user, storyData, probablyDOMStuff) {
+  update(user, storyData, success_callback) {
     const { storyId, ...storyDetails } = storyData;
     $.ajax({
       url: `${BASE_URL}/stories/${storyId}`,
@@ -215,7 +207,7 @@ class Story {
         this.author = response.story.author;
         this.title = response.story.title;
         this.url = response.story.url;
-        probablyDOMStuff(this);
+        success_callback(this);
       }
     });
   }
