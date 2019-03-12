@@ -219,7 +219,7 @@ $(() => {
       let title = $title.val();
       let url = $url.val();
       let author = user.name;
-      storyList.Forms.addStory(user, { title, url, author }, newStory => {
+      storyList.addStory(user, { title, url, author }, newStory => {
         let $ownStoryElement = StoryBoard.attachStoryElement(
           newStory.title,
           newStory.url,
